@@ -1,10 +1,16 @@
+# mac + python
+.DS_Store
 __pycache__/
 *.pyc
-*.pyo
+venv/
+.env
+
+# local db / notebooks
 *.db
 *.sqlite
 *.sqlite3
-.DS_Store
-venv/
-.env
 .ipynb_checkpoints/
+*.ipynb
+
+# frontend folder should NOT be in backend repo
+bracket-web/
