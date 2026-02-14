@@ -27,10 +27,12 @@ app.add_middleware(
         "http://localhost:3000",
         "https://march-madness-bracket-z4rb.vercel.app",
     ],
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 Base.metadata.create_all(bind=engine)
