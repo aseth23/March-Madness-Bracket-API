@@ -23,11 +23,15 @@ def _deadline_passed() -> bool:
 # Allow the Next.js frontend to call this API in the browser
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://march-madness-bracket-z4rb.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 Base.metadata.create_all(bind=engine)
 
