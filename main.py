@@ -33,8 +33,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-
 Base.metadata.create_all(bind=engine)
 
 def get_db():
@@ -95,6 +93,7 @@ def list_entries(db: Session = Depends(get_db)):
     )
 
     # Full list including bracket (used by frontend scoring/leaderboard)
+    # (no email here)
     return [
         {
             "id": e.id,
@@ -115,6 +114,7 @@ def get_entry(entry_id: int, db: Session = Depends(get_db)):
     return {
         "id": entry.id,
         "name": entry.name,
+        "email": entry.email,  # ✅ ADDED so view page can show it
         "username": entry.username,
         "bracket": json.loads(entry.bracket) if entry.bracket else {},
         "locked": entry.locked,
@@ -132,6 +132,7 @@ def view_bracket(entry_id: int, db: Session = Depends(get_db)):
     return {
         "id": entry.id,
         "name": entry.name,
+        "email": entry.email,  # ✅ ADDED (in case frontend uses this route)
         "username": entry.username,
         "bracket": json.loads(entry.bracket) if entry.bracket else {},
         "locked": entry.locked,
