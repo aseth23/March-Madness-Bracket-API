@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
-from typing import Dict
+from typing import Dict, Any
 import json
 
 from datetime import datetime
@@ -14,7 +14,8 @@ from models import Entry
 app = FastAPI()
 
 # ---- Bracket entry/edit deadline (America/New_York) ----
-BRACKET_DEADLINE = datetime(2026, 3, 19, 0, 0, tzinfo=ZoneInfo("America/New_York"))
+# ✅ DEADLINE = March 19, 2026 at 12:00 PM (noon) ET
+BRACKET_DEADLINE = datetime(2026, 3, 11, 12, 0, tzinfo=ZoneInfo("America/New_York"))
 
 def _deadline_passed() -> bool:
     now_et = datetime.now(ZoneInfo("America/New_York"))
@@ -47,19 +48,88 @@ class EntryCreate(BaseModel):
     email: EmailStr
     username: str | None = None
 
+# ----------------------------
+# SCORING (LIVE)
+# ----------------------------
+RESULTS: Dict[str, str] = {}
+
+ROUND_POINTS = {
+    "_64_": 1,
+    "_32_": 2,
+    "_S16_": 4,
+    "_E8_": 8,
+    "FF_SEMI": 16,
+    "FF_CHAMP": 32,
+}
+
+def _points_for_game_id(game_id: str) -> int:
+    if "FF_CHAMP" in game_id:
+        return ROUND_POINTS["FF_CHAMP"]
+    if "FF_SEMI" in game_id:
+        return ROUND_POINTS["FF_SEMI"]
+    for k in ["_E8_", "_S16_", "_32_", "_64_"]:
+        if k in game_id:
+            return ROUND_POINTS[k]
+    return 0
+
+def compute_score(picks: Dict[str, str], results: Dict[str, str]) -> int:
+    if not picks or not results:
+        return 0
+    score = 0
+    for game_id, correct_teamkey in results.items():
+        if picks.get(game_id) == correct_teamkey:
+            score += _points_for_game_id(game_id)
+    return score
+
+# Endpoints to set/get RESULTS (no auth)
+@app.get("/results")
+def get_results():
+    return {"results": RESULTS, "points": ROUND_POINTS}
+
+@app.post("/results")
+def set_results(payload: Dict[str, str]):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload must be a dict of {game_id: teamKey}")
+    cleaned: Dict[str, str] = {}
+    for k, v in payload.items():
+        if not isinstance(k, str) or not isinstance(v, str):
+            raise HTTPException(status_code=400, detail="All keys and values must be strings")
+        cleaned[k] = v
+    RESULTS.clear()
+    RESULTS.update(cleaned)
+    return {"status": "ok", "count": len(RESULTS)}
+
+@app.post("/recompute-scores")
+def recompute_scores(db: Session = Depends(get_db)):
+    rows = db.query(Entry).all()
+    for e in rows:
+        picks = json.loads(e.bracket) if e.bracket else {}
+        e.score = compute_score(picks, RESULTS)
+    db.commit()
+    return {"status": "ok", "updated": len(rows)}
+
+# ----------------------------
+# ROUTES
+# ----------------------------
 @app.get("/")
 def home():
     return {"status": "ok", "message": "Bracket app is running"}
 
+# ✅ NEW: expose deadline to frontend for countdown banner
+@app.get("/meta")
+def meta():
+    return {
+        "deadline_et": BRACKET_DEADLINE.isoformat(),
+        "deadline_passed": _deadline_passed(),
+    }
+
 @app.post("/entries")
 def create_entry(entry: EntryCreate, db: Session = Depends(get_db)):
-    # ✅ Stop new brackets starting March 19th
     if _deadline_passed():
         raise HTTPException(status_code=403, detail="Bracket entry is closed (deadline passed).")
 
     email_norm = entry.email.lower().strip()
 
-    # Stevens-only emails (no verification flow yet)
     if not email_norm.endswith("@stevens.edu"):
         raise HTTPException(status_code=400, detail="Use your @stevens.edu email")
 
@@ -86,14 +156,7 @@ def create_entry(entry: EntryCreate, db: Session = Depends(get_db)):
 
 @app.get("/entries")
 def list_entries(db: Session = Depends(get_db)):
-    rows = (
-        db.query(Entry)
-        .order_by(Entry.created_at.asc())
-        .all()
-    )
-
-    # Full list including bracket (used by frontend scoring/leaderboard)
-    # (no email here)
+    rows = db.query(Entry).order_by(Entry.created_at.asc()).all()
     return [
         {
             "id": e.id,
@@ -111,41 +174,44 @@ def get_entry(entry_id: int, db: Session = Depends(get_db)):
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
+    picks = json.loads(entry.bracket) if entry.bracket else {}
+    live_score = compute_score(picks, RESULTS)
+
     return {
         "id": entry.id,
         "name": entry.name,
-        "email": entry.email,  # ✅ ADDED so view page can show it
+        "email": entry.email,
         "username": entry.username,
-        "bracket": json.loads(entry.bracket) if entry.bracket else {},
+        "bracket": picks,
         "locked": entry.locked,
-        "score": entry.score,
+        "score": live_score,
     }
 
-# ✅ NEW: View-bracket endpoint for the "View" button
-# Same data as /entries/{id} but a cleaner name for the frontend
 @app.get("/view-bracket/{entry_id}")
 def view_bracket(entry_id: int, db: Session = Depends(get_db)):
     entry = db.query(Entry).filter(Entry.id == entry_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
+    picks = json.loads(entry.bracket) if entry.bracket else {}
+    live_score = compute_score(picks, RESULTS)
+
     return {
         "id": entry.id,
         "name": entry.name,
-        "email": entry.email,  # ✅ ADDED (in case frontend uses this route)
+        "email": entry.email,
         "username": entry.username,
-        "bracket": json.loads(entry.bracket) if entry.bracket else {},
+        "bracket": picks,
         "locked": entry.locked,
+        "score": live_score,
     }
 
 @app.post("/entries/{entry_id}/bracket")
-def submit_bracket(entry_id: int, bracket: Dict, db: Session = Depends(get_db)):
+def submit_bracket(entry_id: int, bracket: Dict[str, Any], db: Session = Depends(get_db)):
     entry = db.query(Entry).filter(Entry.id == entry_id).first()
-
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    # ✅ Stop bracket submissions/edits starting March 19th
     if _deadline_passed():
         raise HTTPException(status_code=403, detail="Bracket submissions are closed (deadline passed).")
 
@@ -153,25 +219,28 @@ def submit_bracket(entry_id: int, bracket: Dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Bracket is locked")
 
     entry.bracket = json.dumps(bracket)
-    db.commit()
+    entry.score = compute_score(bracket if isinstance(bracket, dict) else {}, RESULTS)
 
+    db.commit()
     return {"status": "saved", "entry_id": entry_id}
 
 @app.get("/leaderboard")
 def leaderboard(db: Session = Depends(get_db)):
-    rows = (
-        db.query(Entry)
-        .order_by(Entry.score.desc(), Entry.created_at.asc())
-        .all()
-    )
+    rows = db.query(Entry).order_by(Entry.created_at.asc()).all()
 
-    return [
-        {
-            "id": e.id,
-            "name": e.name,
-            "username": e.username,
-            "score": e.score,
-            "locked": e.locked,
-        }
-        for e in rows
-    ]
+    out = []
+    for e in rows:
+        picks = json.loads(e.bracket) if e.bracket else {}
+        live_score = compute_score(picks, RESULTS)
+        out.append(
+            {
+                "id": e.id,
+                "name": e.name,
+                "username": e.username,
+                "score": live_score,
+                "locked": e.locked,
+            }
+        )
+
+    out.sort(key=lambda x: (x["score"] or 0), reverse=True)
+    return out
