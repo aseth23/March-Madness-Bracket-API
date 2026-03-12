@@ -15,7 +15,7 @@ app = FastAPI()
 
 # ---- Bracket entry/edit deadline (America/New_York) ----
 # ✅ DEADLINE = March 19, 2026 at 12:00 PM (noon) ET
-BRACKET_DEADLINE = datetime(2026, 3, 11, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+BRACKET_DEADLINE = datetime(2026, 3, 19, 12, 0, tzinfo=ZoneInfo("America/New_York"))
 
 def _deadline_passed() -> bool:
     now_et = datetime.now(ZoneInfo("America/New_York"))
