@@ -271,7 +271,7 @@ class TTSRequest(BaseModel):
 
 @app.post("/tts")
 def tts(body: TTSRequest):
-    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "sk_7b2a55847afcfccaefe0dede3114fd924d29ece6f7d1f0bf")
     if not api_key:
         raise HTTPException(status_code=503, detail="TTS not configured")
 
