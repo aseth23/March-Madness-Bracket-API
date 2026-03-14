@@ -10,7 +10,9 @@ decorator==5.2.1
 dnspython==2.8.0
 email-validator==2.3.0
 executing==2.2.1
+bcrypt==4.3.0
 fastapi==0.129.0
+passlib==1.7.4
 h11==0.16.0
 idna==3.11
 ipykernel==7.2.0

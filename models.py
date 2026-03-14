@@ -16,6 +16,8 @@ class Entry(Base):
     score = Column(Integer, nullable=False, default=0)
     locked = Column(Boolean, nullable=False, default=False)
 
+    password_hash = Column(String, nullable=True)  # null = legacy entry (no password set)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

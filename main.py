@@ -1,15 +1,19 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 import json
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from passlib.context import CryptContext
 
 from db import Base, engine, SessionLocal
 from models import Entry
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app = FastAPI()
 
@@ -36,6 +40,14 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
+# Safe migration: add password_hash column to existing databases
+with engine.connect() as _conn:
+    try:
+        _conn.execute(text("ALTER TABLE entries ADD COLUMN password_hash TEXT"))
+        _conn.commit()
+    except Exception:
+        pass  # Column already exists
+
 def get_db():
     db = SessionLocal()
     try:
@@ -47,6 +59,11 @@ class EntryCreate(BaseModel):
     name: str
     email: EmailStr
     username: str | None = None
+    password: str
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
 
 # ----------------------------
 # SCORING (LIVE)
@@ -137,10 +154,14 @@ def create_entry(entry: EntryCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=409, detail="Email already used")
 
+    if not entry.password or len(entry.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+
     new_entry = Entry(
         name=entry.name.strip(),
         email=email_norm,
         username=(entry.username.strip() if entry.username else None),
+        password_hash=pwd_context.hash(entry.password),
     )
 
     db.add(new_entry)
@@ -153,6 +174,24 @@ def create_entry(entry: EntryCreate, db: Session = Depends(get_db)):
         "email": new_entry.email,
         "username": new_entry.username,
     }
+
+@app.post("/login")
+def login(req: LoginRequest, db: Session = Depends(get_db)):
+    email_norm = req.email.lower().strip()
+    entry = db.query(Entry).filter(Entry.email == email_norm).first()
+    if not entry:
+        raise HTTPException(status_code=401, detail="No account found for that email")
+
+    if entry.password_hash:
+        if not pwd_context.verify(req.password, entry.password_hash):
+            raise HTTPException(status_code=401, detail="Incorrect password")
+    # Legacy entries without a password: allow login, and set password now
+    else:
+        if req.password:
+            entry.password_hash = pwd_context.hash(req.password)
+            db.commit()
+
+    return {"id": entry.id, "name": entry.name, "username": entry.username}
 
 @app.get("/entries")
 def list_entries(db: Session = Depends(get_db)):
