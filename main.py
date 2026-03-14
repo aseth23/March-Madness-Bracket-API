@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any
 import json
 import os
+import ssl
+import certifi
 import urllib.request
+import urllib.error
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -283,6 +286,7 @@ def tts(body: TTSRequest):
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
     }).encode()
 
+    ctx = ssl.create_default_context(cafile=certifi.where())
     try:
         tts_req = urllib.request.Request(
             f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
@@ -290,7 +294,7 @@ def tts(body: TTSRequest):
             headers={"xi-api-key": api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
             method="POST",
         )
-        with urllib.request.urlopen(tts_req) as r:
+        with urllib.request.urlopen(tts_req, context=ctx) as r:
             audio = r.read()
     except urllib.error.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"ElevenLabs error: {e.read().decode()}")
