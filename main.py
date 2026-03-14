@@ -269,38 +269,13 @@ def submit_bracket(entry_id: int, bracket: Dict[str, Any], db: Session = Depends
 class TTSRequest(BaseModel):
     text: str
 
+ELEVENLABS_VOICE_ID = "UKvDHTUpXOC66VwQ3n2w"
+
 @app.post("/tts")
 def tts(body: TTSRequest):
     api_key = os.environ.get("ELEVENLABS_API_KEY", "sk_7b2a55847afcfccaefe0dede3114fd924d29ece6f7d1f0bf")
     if not api_key:
         raise HTTPException(status_code=503, detail="TTS not configured")
-
-    # Find an Indian male voice from the library
-    voices_req = urllib.request.Request(
-        "https://api.elevenlabs.io/v1/voices",
-        headers={"xi-api-key": api_key},
-    )
-    with urllib.request.urlopen(voices_req) as r:
-        voices_data = json.loads(r.read())
-
-    voice_id = None
-    for v in voices_data.get("voices", []):
-        labels = v.get("labels", {})
-        if labels.get("accent", "").lower() == "indian" and labels.get("gender", "").lower() == "male":
-            voice_id = v["voice_id"]
-            break
-    # Fallback: any Indian accent
-    if not voice_id:
-        for v in voices_data.get("voices", []):
-            if v.get("labels", {}).get("accent", "").lower() == "indian":
-                voice_id = v["voice_id"]
-                break
-    # Last fallback: first available voice
-    if not voice_id and voices_data.get("voices"):
-        voice_id = voices_data["voices"][0]["voice_id"]
-
-    if not voice_id:
-        raise HTTPException(status_code=503, detail="No voices found")
 
     payload = json.dumps({
         "text": body.text,
@@ -308,14 +283,17 @@ def tts(body: TTSRequest):
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
     }).encode()
 
-    tts_req = urllib.request.Request(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-        data=payload,
-        headers={"xi-api-key": api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
-        method="POST",
-    )
-    with urllib.request.urlopen(tts_req) as r:
-        audio = r.read()
+    try:
+        tts_req = urllib.request.Request(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+            data=payload,
+            headers={"xi-api-key": api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
+            method="POST",
+        )
+        with urllib.request.urlopen(tts_req) as r:
+            audio = r.read()
+    except urllib.error.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"ElevenLabs error: {e.read().decode()}")
 
     return Response(content=audio, media_type="audio/mpeg")
 
