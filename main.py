@@ -272,7 +272,7 @@ def submit_bracket(entry_id: int, bracket: Dict[str, Any], db: Session = Depends
 class TTSRequest(BaseModel):
     text: str
 
-ELEVENLABS_VOICE_ID = "UKvDHTUpXOC66VwQ3n2w"
+ELEVENLABS_VOICE_ID = "pzxut4zZz4GImZNlqQ3H"
 
 @app.post("/tts")
 def tts(body: TTSRequest):
