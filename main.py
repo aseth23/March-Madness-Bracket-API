@@ -100,7 +100,18 @@ def compute_score(picks: Dict[str, str], results: Dict[str, str]) -> int:
         return 0
     score = 0
     for game_id, correct_teamkey in results.items():
-        if picks.get(game_id) == correct_teamkey:
+        if not correct_teamkey:
+            continue
+        stored = picks.get(game_id)
+        if not stored:
+            continue
+        if stored == correct_teamkey:
+            score += _points_for_game_id(game_id)
+            continue
+        # Seed fallback: handles play-in name changes (e.g. "11|Miami/Ohio State" vs "11|Ohio State")
+        stored_seed = stored.split("|")[0] if "|" in stored else None
+        correct_seed = correct_teamkey.split("|")[0] if "|" in correct_teamkey else None
+        if stored_seed and correct_seed and stored_seed == correct_seed:
             score += _points_for_game_id(game_id)
     return score
 
