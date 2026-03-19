@@ -239,7 +239,7 @@ def get_entry(entry_id: int, db: Session = Depends(get_db)):
         "email": entry.email,
         "username": entry.username,
         "bracket": picks,
-        "locked": entry.locked,
+        "locked": entry.locked or _deadline_passed(),
         "score": live_score,
     }
 
@@ -258,7 +258,7 @@ def view_bracket(entry_id: int, db: Session = Depends(get_db)):
         "email": entry.email,
         "username": entry.username,
         "bracket": picks,
-        "locked": entry.locked,
+        "locked": entry.locked or _deadline_passed(),
         "score": live_score,
     }
 
